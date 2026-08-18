@@ -48,7 +48,7 @@ export function getCursorToolTailGuardText(
 			? undefined
 			: getCursorPlanModeToolGuidanceText(options.agentMode, { includePiBridgeGuidance: options.includePiBridgeGuidance }),
 		"Exact-output requests: output exactly the requested text; no preamble or checks unless asked.",
-		"Tools: call available Cursor SDK/MCP tools; never print tool cards as assistant text.",
+		"Never print tool cards as assistant text.",
 		options.includePiBridgeGuidance === false ? undefined : CURSOR_PI_BRIDGE_PREFERENCE_TEXT,
 	].filter((line): line is string => line !== undefined).join("\n");
 }
@@ -60,11 +60,12 @@ function getCursorToolBoundaryText(
 	const includePiAskQuestionGuidance = includePiBridgeGuidance && options.includePiAskQuestionGuidance !== false;
 	const lines = [
 		"Cursor SDK tool boundary:",
-		"Call only Cursor SDK/MCP tools exposed in this run; pi history names, replay labels, and transcript names are not callable.",
+		"Prefer Cursor SDK host tools when they overlap a pi tool (read, shell, grep, edit, write, glob).",
+		"Callable names are the Cursor SDK/MCP tools exposed this run; pi history names, replay labels, and transcript names are not callable.",
 		includePiBridgeGuidance
 			? "For exposed pi bridge tools, call pi__* MCP names, not pi card/history names."
 			: undefined,
-		"Do not claim pi-side or WebSearch/WebFetch tools unless Cursor ran an equivalent tool.",
+		"Do not claim WebSearch/WebFetch tools unless Cursor actually ran them.",
 		includePiAskQuestionGuidance ? "Use pi__cursor_ask_question for material choices if exposed." : undefined,
 		getCursorPlanModeToolGuidanceText(options.agentMode, { includePiBridgeGuidance }),
 		"Images: only latest user images are sent; ask to reattach prior images.",
@@ -79,7 +80,7 @@ function getCursorBootstrapTailSections(
 	options: Pick<CursorPromptOptions, "agentMode" | "includePiBridgeGuidance"> = {},
 ): string[] {
 	return [
-		"Answer the latest user request above using the instructions and Cursor SDK capabilities available in this run.",
+		"Answer the latest user request above using the instructions and tools available in this run.",
 		getCursorToolTailGuardText({ ...options, includePlanModeGuidance: false }),
 	];
 }
@@ -381,7 +382,7 @@ export function buildCursorIncrementalPrompt(context: Context, options: CursorPr
 	const latestUserMessage = latestUserMessageIndex >= 0 ? messages[latestUserMessageIndex] : undefined;
 	const latestUserText = latestUserMessage ? formatMessage(latestUserMessage) : undefined;
 	const sectionsBeforeMessages = [
-		"Continue the conversation using Cursor SDK capabilities only. Do not list, promise, or call pi-only tools from earlier context as if they were available.",
+		"Continue the conversation using the tools available in this run. Do not list, promise, or call pi-only tools from earlier context as if they were available.",
 	];
 	const latestUserMessageSections =
 		latestUserText && latestUserMessageIndex >= 0 ? [{ index: latestUserMessageIndex, text: latestUserText }] : [];
