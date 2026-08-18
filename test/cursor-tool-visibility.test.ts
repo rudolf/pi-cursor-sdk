@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { classifyCursorToolVisibility, isFastLocalDiscoveryTool } from "../src/cursor-tool-visibility.js";
+import {
+	classifyCursorToolVisibility,
+	isFastLocalDiscoveryTool,
+	isSideEffectCursorTool,
+} from "../src/cursor-tool-visibility.js";
 import { buildCursorPiToolDisplay } from "../src/cursor-tool-transcript.js";
 
 describe("cursor tool visibility classification", () => {
@@ -10,6 +14,9 @@ describe("cursor tool visibility classification", () => {
 		}
 
 		expect(isFastLocalDiscoveryTool({ name: "shell" })).toBe(false);
+		expect(isSideEffectCursorTool({ name: "shell" })).toBe(true);
+		expect(isSideEffectCursorTool({ name: "edit" })).toBe(true);
+		expect(isSideEffectCursorTool({ name: "read" })).toBe(false);
 		expect(classifyCursorToolVisibility({ name: "shell" })).toMatchObject({
 			normalizedName: "shell",
 			activityTitle: "Cursor shell",

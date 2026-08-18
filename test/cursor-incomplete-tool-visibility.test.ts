@@ -55,25 +55,29 @@ describe("cursor incomplete tool visibility", () => {
 		});
 	});
 
-	it("keeps fast local stale-start suppression in the incomplete visibility policy", () => {
+	it("hides every stale start after a text-producing finished run", () => {
+		const textProduced = buildIncompleteCursorToolRunOutcome({
+			assistantTextProduced: true,
+			reason: DISCARDED_INCOMPLETE_TOOL_CALL_REASON,
+		});
+		expect(
+			resolveIncompleteCursorToolVisibility({ name: "glob", args: { pattern: "src/**/*.ts" } }, textProduced),
+		).toBe("debugOnly");
+		expect(
+			resolveIncompleteCursorToolVisibility({ name: "mcp", args: { toolName: "git" } }, textProduced),
+		).toBe("debugOnly");
 		expect(
 			resolveIncompleteCursorToolVisibility(
-				{ name: "glob", args: { pattern: "src/**/*.ts" } },
-				buildIncompleteCursorToolRunOutcome({
-					assistantTextProduced: true,
-					reason: DISCARDED_INCOMPLETE_TOOL_CALL_REASON,
-				}),
+				{ name: "shell", args: { command: "cat page.tsx" } },
+				textProduced,
 			),
 		).toBe("debugOnly");
 		expect(
 			resolveIncompleteCursorToolVisibility(
-				{ name: "mcp", args: { toolName: "git" } },
-				buildIncompleteCursorToolRunOutcome({
-					assistantTextProduced: true,
-					reason: DISCARDED_INCOMPLETE_TOOL_CALL_REASON,
-				}),
+				{ name: "edit", args: { path: "src/app/explain/page.tsx" } },
+				textProduced,
 			),
-		).toBe("emit");
+		).toBe("debugOnly");
 		expect(
 			resolveIncompleteCursorToolVisibility(
 				{ name: "glob", args: { pattern: "src/**/*.ts" } },

@@ -74,6 +74,8 @@ export interface CursorToolVisibilityPolicy {
 	lifecycleTitle?: string;
 	lifecycleEligible?: boolean;
 	fastLocalDiscovery?: boolean;
+	/** edit/write/delete/shell — started-but-unfinished calls should recycle the agent. */
+	sideEffect?: boolean;
 }
 
 export interface CursorToolReplayDisplayPolicy {
@@ -145,6 +147,7 @@ export const CURSOR_TOOL_PRESENTATION_SPECS = [
 			incompleteTitle: "Cursor shell",
 			lifecycleTitle: "Cursor shell",
 			lifecycleEligible: true,
+			sideEffect: true,
 		},
 		lifecycleLabelKind: "shell",
 	},
@@ -162,20 +165,20 @@ export const CURSOR_TOOL_PRESENTATION_SPECS = [
 			"notebookedit",
 		],
 		displayLabel: "Cursor edit",
-		visibility: {},
+		visibility: { sideEffect: true },
 		replayCallSummary: withActivitySummaryFallback(summarizeReplayPath),
 	},
 	{
 		normalizedName: "write",
 		nameAliases: ["write_file", "writefile"],
 		displayLabel: "Cursor write",
-		visibility: {},
+		visibility: { sideEffect: true },
 		replayCallSummary: withActivitySummaryFallback(summarizeReplayPath),
 	},
 	{
 		normalizedName: "delete",
 		displayLabel: "Cursor delete",
-		visibility: {},
+		visibility: { sideEffect: true },
 		replayCallSummary: withActivitySummaryFallback(summarizeReplayPath),
 		activityReplay: {
 			buildActivityArgs: buildDeleteReplaySummaryArgs,

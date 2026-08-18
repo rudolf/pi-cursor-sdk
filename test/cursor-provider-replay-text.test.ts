@@ -363,40 +363,11 @@ it("replays Cursor createPlan as a neutral cursor card before final plan text", 
 		const replayText = collectTextDeltas(replayEvents);
 		const incompleteToolCall = replayDone.message.content.find(isToolCallBlock);
 
-		expect(replayDone.reason).toBe("toolUse");
-		expect(replayText).toBe("");
-		expect(incompleteToolCall).toMatchObject({
-			name: "cursor",
-			arguments: { activityTitle: "Cursor MCP", activitySummary: "missing completion" },
-		});
-		expect(nativeToolDisplayTestUtils.nativeToolResultCount()).toBe(1);
-
-		const incompleteReplayContext = makeContext();
-		incompleteReplayContext.messages = [
-			...incompleteReplayContext.messages,
-			firstDone.message,
-			{
-				role: "toolResult" as const,
-				toolCallId: toolCall!.id,
-				toolName: "read",
-				content: toolResult.content,
-				details: toolResult.details,
-				isError: false,
-				timestamp: 2,
-			},
-			replayDone.message,
-			{
-				role: "toolResult" as const,
-				toolCallId: incompleteToolCall!.id,
-				toolName: "cursor",
-				content: [{ type: "text" as const, text: "Cursor MCP did not complete" }],
-				isError: true,
-				timestamp: 4,
-			},
-		];
-		const finalEvents = await collectEvents(streamCursor(makeModel(), incompleteReplayContext, { apiKey: "test-key" }));
-		expect(getDoneEvent(finalEvents).reason).toBe("stop");
-		expect(collectTextDeltas(finalEvents)).toBe("Done.");
+		expect(replayDone.reason).toBe("stop");
+		expect(replayText).toBe("Done.");
+		expect(incompleteToolCall).toBeUndefined();
+		expect(collectThinkingDeltas(replayEvents)).toContain("Cursor MCP did not complete");
+		expect(nativeToolDisplayTestUtils.nativeToolResultCount()).toBe(0);
 		expect(cursorProviderTestUtils.pendingCursorNativeRunCount()).toBe(0);
 	});
 
@@ -437,31 +408,12 @@ it("replays Cursor createPlan as a neutral cursor card before final plan text", 
 		const done = getDoneEvent(events);
 		const text = collectTextDeltas(events);
 
-		expect(done.reason).toBe("toolUse");
-		expect(text).toBe("");
-		expect(done.message.content.find(isToolCallBlock)).toMatchObject({
-			name: "cursor",
-			arguments: { activityTitle: "Cursor MCP", activitySummary: "missing completion" },
-		});
-		expect(hasEventType(events, "toolcall_start")).toBe(true);
-		expect(nativeToolDisplayTestUtils.nativeToolResultCount()).toBe(1);
-
-		const replayContext = makeContext();
-		replayContext.messages = [
-			...replayContext.messages,
-			done.message,
-			{
-				role: "toolResult" as const,
-				toolCallId: done.message.content.find(isToolCallBlock)!.id,
-				toolName: "cursor",
-				content: [{ type: "text" as const, text: "Cursor MCP did not complete" }],
-				isError: true,
-				timestamp: 2,
-			},
-		];
-		const finalEvents = await collectEvents(streamCursor(makeModel(), replayContext, { apiKey: "test-key" }));
-		expect(getDoneEvent(finalEvents).reason).toBe("stop");
-		expect(collectTextDeltas(finalEvents)).toBe("Done.");
+		expect(done.reason).toBe("stop");
+		expect(text).toBe("Done.");
+		expect(done.message.content.find(isToolCallBlock)).toBeUndefined();
+		expect(hasEventType(events, "toolcall_start")).toBe(false);
+		expect(collectThinkingDeltas(events)).toContain("Cursor MCP did not complete");
+		expect(nativeToolDisplayTestUtils.nativeToolResultCount()).toBe(0);
 		expect(cursorProviderTestUtils.pendingCursorNativeRunCount()).toBe(0);
 	});
 

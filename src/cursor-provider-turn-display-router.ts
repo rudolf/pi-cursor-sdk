@@ -113,6 +113,7 @@ export class CursorTurnDisplayRouter {
 	routeIncompleteStartedToolCall(
 		toolCall: unknown,
 		reason: IncompleteCursorToolDiscardReason,
+		options: { forceTrace?: boolean } = {},
 	): CursorTurnDisplayAction | undefined {
 		const display = scrubPiToolDisplay(
 			buildIncompleteCursorToolDisplay(toolCall, reason, { apiKey: this.resolvedApiKey }),
@@ -125,7 +126,7 @@ export class CursorTurnDisplayRouter {
 			hasLiveRun: this.liveRun !== undefined,
 		});
 
-		if (disposition === "queue_replay" && this.liveRun && reason !== "abort") {
+		if (disposition === "queue_replay" && this.liveRun && reason !== "abort" && !options.forceTrace) {
 			this.nativeToolReplayStarted = true;
 			const id = `${this.nativeReplayId}-tool-${++this.nativeToolDisplayCounter}`;
 			this.recordDisplayDecision({
@@ -195,9 +196,10 @@ export class CursorTurnDisplayRouter {
 	recordIncompleteSkip(
 		toolName: string,
 		reason: string,
+		action: "skip-incomplete-fast-local" | "skip-incomplete-text-produced" = "skip-incomplete-fast-local",
 	): void {
 		this.recordDisplayDecision({
-			action: "skip-incomplete-fast-local",
+			action,
 			toolName,
 			source: "started",
 			reason,
