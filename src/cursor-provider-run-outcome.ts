@@ -61,7 +61,9 @@ function hasCursorAssistantText(
 	);
 }
 
-export function isCursorRunFinishedSuccessfully(outcome: CursorRunOutcome): boolean {
+export function isCursorRunFinishedSuccessfully(
+	outcome: CursorRunOutcome,
+): outcome is Extract<CursorRunOutcome, { kind: "finished" }> {
 	return outcome.kind === "finished";
 }
 

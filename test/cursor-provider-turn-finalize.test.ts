@@ -30,6 +30,26 @@ vi.mock("../src/context-window-cache.js", () => ({
 
 import { awaitFinalizeCursorRunOutcome, cacheSdkContextWindow } from "../src/cursor-provider-turn-finalize.js";
 
+function makeLocalPrepared(): CursorProviderTurnPrepareResult {
+	return {
+		runtimeTarget: "local",
+		cwd: process.cwd(),
+		payload: { text: "hello" },
+		meta: {},
+		textDeltas: ["There is no public explain guide."],
+		restoreCursorSdkOutputFilter: () => {},
+		sessionAgentLease: { store: {}, scopeKey: "test" },
+		runtime: {
+			kind: "live",
+			turnCoordinator: {
+				planTextCandidate: undefined,
+				discardIncompleteStartedToolCalls: vi.fn(),
+				handleTranscriptCompletedToolCalls: vi.fn(),
+			},
+		},
+	} as unknown as CursorProviderTurnPrepareResult;
+}
+
 function makeCloudPrepared(agent: SDKAgent): CursorProviderTurnPrepareResult {
 	return {
 		runtimeTarget: "cloud",
@@ -187,6 +207,50 @@ describe("awaitFinalizeCursorRunOutcome", () => {
 
 		expect(finalized.outcome.kind).toBe("finished");
 		expect(pi.appendEntry).toHaveBeenCalledTimes(1);
+	});
+
+	it("does not backfill transcript web tools after a finished local run", async () => {
+		const handleTranscriptCompletedToolCalls = vi.fn();
+		const prepared = {
+			...makeLocalPrepared(),
+			runtime: {
+				kind: "live",
+				turnCoordinator: {
+					planTextCandidate: undefined,
+					discardIncompleteStartedToolCalls: vi.fn(),
+					handleTranscriptCompletedToolCalls,
+				},
+			},
+		} as unknown as CursorProviderTurnPrepareResult;
+		const recordCoordinatorEvent = vi.fn();
+		const sdkEventDebug = {
+			recordWaitResult: vi.fn(),
+			recordCoordinatorEvent,
+			captureRunArtifacts: vi.fn(),
+		} as unknown as CursorSdkEventDebugSink;
+
+		const finalized = await awaitFinalizeCursorRunOutcome({
+			run: {
+				id: "run-local",
+				agentId: "agent-local",
+				wait: vi.fn(),
+			} as unknown as Awaited<ReturnType<SDKAgent["send"]>>,
+			prepared,
+			cursorAgentMessageOffset: 5,
+			modelId: "grok-4.6:fast",
+			waitResult: { id: "run-local", status: "finished", result: "There is no public explain guide." },
+			sdkEventDebug,
+			cacheContextWindow: false,
+		});
+
+		expect(finalized.outcome.kind).toBe("finished");
+		expect(handleTranscriptCompletedToolCalls).not.toHaveBeenCalled();
+		expect(recordCoordinatorEvent).toHaveBeenCalledWith("cursor-transcript-web-tools-skipped", {
+			reason: "finished-local-run",
+			agentId: "agent-local",
+			messageOffset: 5,
+			assistantTextProduced: true,
+		});
 	});
 });
 

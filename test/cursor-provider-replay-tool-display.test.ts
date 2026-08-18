@@ -228,10 +228,9 @@ it("replays Cursor grep activity through native grep display", async () => {
 		expect(cursorProviderTestUtils.pendingCursorNativeRunCount()).toBe(0);
 	});
 
-	it("replays Cursor WebSearch activity from local agent messages when stream deltas omit tool events", async () => {
+	it("does not backfill Cursor WebSearch from local agent messages after a finished local run", async () => {
 		process.env.PI_CURSOR_NATIVE_TOOL_DISPLAY = "1";
-		const registeredTools: RegisteredTool[] = [];
-		await registerNativeToolDisplayForTest(registeredTools);
+		await registerNativeToolDisplayForTest([]);
 
 		mockedMessagesList.mockImplementation(async (_agentId, options) => {
 			if (options?.limit === 1) return [];
@@ -288,35 +287,11 @@ it("replays Cursor grep activity through native grep display", async () => {
 
 		const firstEvents = await collectEvents(streamCursor(makeModel(), makeContext(), { apiKey: "test-key" }));
 		const firstDone = getDoneEvent(firstEvents);
-		const toolCall = firstDone.message.content.find(isToolCallBlock);
 
-		expect(firstDone.reason).toBe("toolUse");
-		expect(toolCall!.name).toBe("cursor");
-		expect(toolCall!.arguments).toMatchObject({
-			query: "Cursor IDE",
-			activityTitle: "Cursor web search",
-			activitySummary: "Cursor IDE",
-		});
-
-		const cursorTool = registeredTools.find((tool) => tool.name === "cursor");
-		const toolResult = await cursorTool!.execute(toolCall!.id, toolCall!.arguments, undefined, undefined, createExtensionTestContext());
-		expect(textFromToolResultBlock(toolResult.content[0])).toContain("Cursor — Build Software with AI Agents");
-
-		const replayContext = makeContext();
-		replayContext.messages = [
-			...replayContext.messages,
-			firstDone.message,
-			{
-				role: "toolResult",
-				toolCallId: toolCall!.id,
-				toolName: "cursor",
-				content: toolResult.content,
-				details: toolResult.details,
-				isError: false,
-				timestamp: 2,
-			},
-		];
-		await collectEvents(streamCursor(makeModel(), replayContext, { apiKey: "test-key" }));
+		expect(firstDone.reason).toBe("stop");
+		expect(collectTextDeltas(firstEvents)).toBe("SEARCH_DONE=yes");
+		expect(firstDone.message.content.find(isToolCallBlock)).toBeUndefined();
+		expect(collectThinkingDeltas(firstEvents)).not.toContain("Cursor — Build Software with AI Agents");
 		expect(cursorProviderTestUtils.pendingCursorNativeRunCount()).toBe(0);
 	});
 

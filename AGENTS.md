@@ -13,7 +13,7 @@ This repository is a pi provider extension that registers Cursor SDK-backed mode
 - `src/cursor-provider-turn-runner.ts` orchestrates provider turns (pre-send drain, prepare, send, finalize, emit, cleanup).
 - `src/cursor-provider-turn-prepare.ts` owns turn prepare (auth, MCP timeout install, effective local HTTP transport configuration, session agent, live-run setup, coordinator).
 - `src/cursor-provider-turn-send.ts` owns SDK `agent.send()` wiring and abort listener registration.
-- `src/cursor-provider-turn-finalize.ts` owns unified `awaitFinalizeCursorRunOutcome()` (wait, transcript replay, incomplete tools, artifacts, context cache).
+- `src/cursor-provider-turn-finalize.ts` owns unified `awaitFinalizeCursorRunOutcome()` (wait, incomplete tools, artifacts, context cache). Finished local runs do not backfill transcript webSearch/webFetch as toolUse.
 - `src/cursor-provider-turn-emit.ts` owns live vs direct emission from finalized outcomes.
 - `src/cursor-provider-turn-types.ts` owns immutable turn phase data and explicit phase result types; phase-local cleanup stays inside the owning phase.
 - `src/cursor-provider-run-outcome.ts` owns the discriminated `CursorRunOutcome` model and terminal emission classification.
