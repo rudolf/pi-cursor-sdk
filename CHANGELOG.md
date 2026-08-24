@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Skip late transcript `webSearch`/`webFetch` replay after a finished local run. `wait()` already ended the Cursor turn; backfilling those tools as `toolUse` dumped fetch bodies after the answer and then emitted an empty stop.
 - Isolate `smoke:visual` captures from the host: pi runs with `PI_CODING_AGENT_DIR=<out-dir>/pi-agent` (seeded `auth.json`, `quietStartup`, telemetry off), `PI_OFFLINE=1`, and `PI_SKIP_VERSION_CHECK=1`, so host extensions, skills, MCP config, update banners, and package-update notices no longer pollute visual evidence.
 - Start the visual-smoke tmux session in `--cwd` with a non-login shell, eliminating `shell-init: getcwd` noise from a stale tmux-server working directory.
 - Forward `--session-id` to pi only when explicitly provided, so fresh captures no longer show the new-session warning line; the HTML render labels pi-assigned sessions instead of failing.

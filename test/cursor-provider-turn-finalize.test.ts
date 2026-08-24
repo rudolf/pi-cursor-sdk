@@ -33,6 +33,9 @@ import { awaitFinalizeCursorRunOutcome, cacheSdkContextWindow } from "../src/cur
 function makeLocalPrepared(): CursorProviderTurnPrepareResult {
 	return {
 		runtimeTarget: "local",
+		agent: {
+			getUsage: vi.fn().mockResolvedValue({ usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, totalTokens: 0 }, runs: [] }),
+		},
 		cwd: process.cwd(),
 		payload: { text: "hello" },
 		meta: {},
