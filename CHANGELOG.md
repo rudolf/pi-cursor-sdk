@@ -5,11 +5,13 @@
 ### Changed
 
 - Align `cursor_ask_question` / `pi__cursor_ask_question` with Cursor Desktop's strict AskQuestion copy. Ask only in exceptional blocked circumstances; do not use the picker for routine next-step choices or compressed tradeoffs.
+- Prefer Cursor SDK host tools when they overlap a pi tool, instead of telling the model to avoid pi-side tools.
 
 ### Fixed
 
 - Recreate a pooled local Cursor SDK agent after five minutes without a successful send instead of reusing a dead transport that Cursor reports as an invalid API key. Idle replacement uses `Agent.create`, not `Agent.resume`.
 - Skip late transcript `webSearch`/`webFetch` replay after a finished local run. `wait()` already ended the Cursor turn; backfilling those tools as `toolUse` dumped fetch bodies after the answer and then emitted an empty stop.
+- Do not replay incomplete Cursor tools after a text-producing finished run. Started-without-completion events were queued as cursor cards, which flipped Pi to `toolUse` and an empty stop.
 - Isolate `smoke:visual` captures from the host: pi runs with `PI_CODING_AGENT_DIR=<out-dir>/pi-agent` (seeded `auth.json`, `quietStartup`, telemetry off), `PI_OFFLINE=1`, and `PI_SKIP_VERSION_CHECK=1`, so host extensions, skills, MCP config, update banners, and package-update notices no longer pollute visual evidence.
 - Start the visual-smoke tmux session in `--cwd` with a non-login shell, eliminating `shell-init: getcwd` noise from a stale tmux-server working directory.
 - Forward `--session-id` to pi only when explicitly provided, so fresh captures no longer show the new-session warning line; the HTML render labels pi-assigned sessions instead of failing.
