@@ -2,6 +2,10 @@
 
 ## 0.3.6 - 2026-08-18
 
+### Changed
+
+- Align `cursor_ask_question` / `pi__cursor_ask_question` with Cursor Desktop's strict AskQuestion copy. Ask only in exceptional blocked circumstances; do not use the picker for routine next-step choices or compressed tradeoffs.
+
 ### Fixed
 
 - Isolate `smoke:visual` captures from the host: pi runs with `PI_CODING_AGENT_DIR=<out-dir>/pi-agent` (seeded `auth.json`, `quietStartup`, telemetry off), `PI_OFFLINE=1`, and `PI_SKIP_VERSION_CHECK=1`, so host extensions, skills, MCP config, update banners, and package-update notices no longer pollute visual evidence.

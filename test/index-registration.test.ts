@@ -202,7 +202,12 @@ describe("extension registration and discovery", () => {
 			"edit",
 			"write",
 		]);
-		expect(pi._tools.find((tool) => tool.name === CURSOR_ASK_QUESTION_TOOL_NAME)?.promptSnippet).toContain("clarifying question");
+		expect(pi._tools.find((tool) => tool.name === CURSOR_ASK_QUESTION_TOOL_NAME)?.promptSnippet).toContain(
+			"exceptional blocked circumstances",
+		);
+		expect(pi._tools.find((tool) => tool.name === CURSOR_ASK_QUESTION_TOOL_NAME)?.description).toContain(
+			"STRICT INVOCATION RULES",
+		);
 		expect(pi._tools.find((tool) => tool.name === CURSOR_ACTIVATE_SKILL_TOOL_NAME)?.promptSnippet).toContain("Agent Skill");
 		const replayTool = pi._tools.find((tool) => tool.name === "cursor");
 		expect(replayTool?.promptSnippet).toBeUndefined();
@@ -534,7 +539,9 @@ describe("extension registration and discovery", () => {
 
 		const snapshot = buildCursorPiToolBridgeSnapshot(pi);
 		expect(snapshot.piToolNameToMcpToolName.get(CURSOR_ASK_QUESTION_TOOL_NAME)).toBe("pi__cursor_ask_question");
-		expect(snapshot.tools.find((tool) => tool.piToolName === CURSOR_ASK_QUESTION_TOOL_NAME)?.description).toContain("Ask the user");
+		expect(snapshot.tools.find((tool) => tool.piToolName === CURSOR_ASK_QUESTION_TOOL_NAME)?.description).toContain(
+			"STRICT INVOCATION RULES",
+		);
 	});
 
 	it("disables only the Cursor question tool with PI_CURSOR_ASK_QUESTION=0", async () => {
