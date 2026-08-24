@@ -5,6 +5,11 @@ import { arePiToolsDisabled } from "./cursor-active-tools.js";
 import { parseEnvBoolean } from "./cursor-env-boolean.js";
 import { isCursorModel } from "./cursor-model.js";
 import { registerCursorModelLifecycle, type CursorModelLifecycleExtensionApi } from "./cursor-model-lifecycle.js";
+import {
+	CURSOR_ASK_QUESTION_DESCRIPTION,
+	CURSOR_ASK_QUESTION_PROMPT_GUIDELINES,
+	CURSOR_ASK_QUESTION_PROMPT_SNIPPET,
+} from "./cursor-ask-question-copy.js";
 import { resolveCursorPiToolBridgeEnabled } from "./cursor-pi-tool-bridge-env.js";
 
 export const CURSOR_ASK_QUESTION_TOOL_NAME = "cursor_ask_question";
@@ -215,15 +220,11 @@ export function registerCursorQuestionTool(pi: CursorQuestionToolExtensionApi): 
 	pi.registerTool({
 		name: CURSOR_ASK_QUESTION_TOOL_NAME,
 		label: "Cursor question",
-		description:
-			"Ask the user a clarifying question from Cursor. Use when user preferences materially affect the next step; provide options when possible.",
-		promptSnippet: "Ask the user a clarifying question through pi UI when material choices affect Cursor's next step",
+		description: CURSOR_ASK_QUESTION_DESCRIPTION,
+		promptSnippet: CURSOR_ASK_QUESTION_PROMPT_SNIPPET,
 		executionMode: "sequential",
 		parameters: CursorAskQuestionParamsSchema,
-		promptGuidelines: [
-			"Use cursor_ask_question only when running a Cursor model and user input would materially change the plan, scope, platform, or implementation path.",
-			"Prefer cursor_ask_question with 2-4 concrete options instead of guessing when Cursor plan mode needs user choices.",
-		],
+		promptGuidelines: [...CURSOR_ASK_QUESTION_PROMPT_GUIDELINES],
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			const questions = normalizeQuestions(params as CursorAskQuestionParams);
 			if (questions.length === 0) {

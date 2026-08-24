@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { Context, Message, ToolCall } from "@earendil-works/pi-ai";
 import { convertToLlm } from "@earendil-works/pi-coding-agent";
 import type { AgentModeOption, SDKImage } from "@cursor/sdk";
+import { CURSOR_ASK_QUESTION_BOOTSTRAP_GUIDANCE } from "./cursor-ask-question-copy.js";
 import { CURSOR_PI_BRIDGE_PREFERENCE_TEXT } from "./cursor-bridge-contract.js";
 import { getCursorReplayPromptLabel } from "./cursor-tool-presentation-registry.js";
 
@@ -65,7 +66,7 @@ function getCursorToolBoundaryText(
 			? "For exposed pi bridge tools, call pi__* MCP names, not pi card/history names."
 			: undefined,
 		"Do not claim pi-side or WebSearch/WebFetch tools unless Cursor ran an equivalent tool.",
-		includePiAskQuestionGuidance ? "Use pi__cursor_ask_question for material choices if exposed." : undefined,
+		includePiAskQuestionGuidance ? CURSOR_ASK_QUESTION_BOOTSTRAP_GUIDANCE : undefined,
 		getCursorPlanModeToolGuidanceText(options.agentMode, { includePiBridgeGuidance }),
 		"Images: only latest user images are sent; ask to reattach prior images.",
 	].filter((line): line is string => line !== undefined);

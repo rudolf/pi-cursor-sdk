@@ -2,6 +2,10 @@
 
 ## 0.3.6 - 2026-08-18
 
+### Changed
+
+- Align `cursor_ask_question` / `pi__cursor_ask_question` with Cursor Desktop's strict AskQuestion copy. Ask only in exceptional blocked circumstances; do not use the picker for routine next-step choices or compressed tradeoffs.
+
 ### Fixed
 
 - Recreate a pooled local Cursor SDK agent after five minutes without a successful send instead of reusing a dead transport that Cursor reports as an invalid API key. Idle replacement uses `Agent.create`, not `Agent.resume`.
