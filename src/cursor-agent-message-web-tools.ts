@@ -3,8 +3,6 @@ import { asRecord, getArray, getString } from "./cursor-record-utils.js";
 import { stringifyUnknown } from "./cursor-transcript-utils.js";
 import { loadCursorSdk } from "./cursor-sdk-runtime.js";
 
-const CURSOR_AGENT_MESSAGE_PAGE_LIMIT = 8;
-
 export interface CursorTranscriptCompletedToolCall {
 	identity: string;
 	toolCall: unknown;
@@ -47,24 +45,6 @@ export async function countCursorAgentMessages(agentId: string, cwd: string, sto
 		else high = mid;
 	}
 	return low;
-}
-
-export async function loadCursorTranscriptWebToolCallsAfterOffset(options: {
-	agentId: string;
-	cwd: string;
-	offset: number | undefined;
-	store?: LocalAgentStore;
-}): Promise<CursorTranscriptCompletedToolCall[]> {
-	if (options.offset === undefined) return [];
-	const { Agent } = await loadCursorSdk();
-	const messages = await Agent.messages.list(options.agentId, {
-		runtime: "local",
-		cwd: options.cwd,
-		...(options.store ? { store: options.store } : {}),
-		limit: CURSOR_AGENT_MESSAGE_PAGE_LIMIT,
-		offset: options.offset,
-	});
-	return collectCursorTranscriptWebToolCalls(messages);
 }
 
 export function collectCursorTranscriptWebToolCalls(messages: readonly AgentMessage[]): CursorTranscriptCompletedToolCall[] {

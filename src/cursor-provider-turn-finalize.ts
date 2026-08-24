@@ -1,5 +1,4 @@
 import type { LocalAgentStore, RunError, SDKAgent } from "@cursor/sdk";
-import { loadCursorTranscriptWebToolCallsAfterOffset } from "./cursor-agent-message-web-tools.js";
 import {
 	collectCursorCloudRunReport,
 	formatCursorCloudRunReport,
@@ -9,7 +8,6 @@ import { recordCursorCloudLifecycleRun } from "./cursor-cloud-lifecycle.js";
 import { getCheckpointContextWindow, saveCachedContextWindow } from "./context-window-cache.js";
 import { scrubSensitiveText } from "./cursor-sensitive-text.js";
 import type { CursorSdkEventDebugSink } from "./cursor-sdk-event-debug.js";
-import type { CursorSdkTurnCoordinator } from "./cursor-provider-turn-coordinator.js";
 import {
 	isCursorRunFinishedSuccessfully,
 	resolveCursorRunOutcome,
@@ -72,31 +70,16 @@ export function buildCursorRunOutcomeFromWait(params: BuildCursorRunOutcomeParam
 	});
 }
 
-async function replayCursorTranscriptWebToolCalls(
-	agentId: string,
-	cwd: string,
-	messageOffset: number | undefined,
-	turnStore: LocalAgentStore,
-	turnCoordinator: CursorSdkTurnCoordinator,
+function skipFinishedLocalTranscriptWebToolReplay(
 	sdkEventDebug: CursorSdkEventDebugSink | undefined,
-): Promise<void> {
-	try {
-		const transcriptToolCalls = await loadCursorTranscriptWebToolCallsAfterOffset({
-			agentId,
-			cwd,
-			offset: messageOffset,
-			store: turnStore,
-		});
-		if (transcriptToolCalls.length === 0) return;
-		sdkEventDebug?.recordCoordinatorEvent("cursor-transcript-web-tools", {
-			agentId,
-			messageOffset,
-			count: transcriptToolCalls.length,
-		});
-		turnCoordinator.handleTranscriptCompletedToolCalls(transcriptToolCalls);
-	} catch (error) {
-		sdkEventDebug?.recordError("cursor_transcript_web_tools", error);
-	}
+	details: { agentId: string; messageOffset: number | undefined; assistantTextProduced: boolean },
+): void {
+	sdkEventDebug?.recordCoordinatorEvent("cursor-transcript-web-tools-skipped", {
+		reason: "finished-local-run",
+		agentId: details.agentId,
+		messageOffset: details.messageOffset,
+		assistantTextProduced: details.assistantTextProduced,
+	});
 }
 
 function scrubCursorCloudReportingError(error: unknown, apiKey: string | undefined): Error {
@@ -137,7 +120,7 @@ export interface FinalizedCursorRunOutcome {
 	displayOnlyTraceBlock?: string;
 }
 
-/** Single wait/finalize path for SDK runs: wait, debug capture, transcript replay, incomplete tools, artifacts, context cache. */
+/** Single wait/finalize path for SDK runs: wait, debug capture, incomplete tools, artifacts, context cache. */
 export async function awaitFinalizeCursorRunOutcome(params: AwaitFinalizeCursorRunOutcomeParams): Promise<FinalizedCursorRunOutcome> {
 	const apiKey = params.resolvedApiKey ?? params.optionsApiKey;
 	const waitResult = params.waitResult ?? (await params.run.wait());
@@ -196,14 +179,14 @@ export async function awaitFinalizeCursorRunOutcome(params: AwaitFinalizeCursorR
 		// Debug reporting must never affect provider execution.
 	}
 	if (params.prepared.runtimeTarget === "local" && isCursorRunFinishedSuccessfully(outcome)) {
-		await replayCursorTranscriptWebToolCalls(
-			params.run.agentId,
-			params.prepared.cwd,
-			params.cursorAgentMessageOffset,
-			params.prepared.sessionAgentLease.store,
-			params.prepared.runtime.turnCoordinator,
-			params.sdkEventDebug,
-		);
+		// wait() already ended the Cursor turn. Late transcript webSearch/webFetch
+		// replay would queue_replay into the still-open live run, flip the answer
+		// to toolUse, dump fetch bodies, then emit an empty stop. Do not inject.
+		skipFinishedLocalTranscriptWebToolReplay(params.sdkEventDebug, {
+			agentId: params.run.agentId,
+			messageOffset: params.cursorAgentMessageOffset,
+			assistantTextProduced: outcome.assistantTextProduced,
+		});
 	}
 	params.prepared.runtime.turnCoordinator.discardIncompleteStartedToolCalls(outcome.incompleteTools);
 	try {
