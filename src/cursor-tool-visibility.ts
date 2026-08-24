@@ -16,6 +16,7 @@ export interface CursorToolVisibility {
 	lifecycleTitle?: string;
 	lifecycleEligible: boolean;
 	fastLocalDiscovery: boolean;
+	sideEffect: boolean;
 }
 
 export function getNormalizedCursorToolName(toolCall: unknown): string {
@@ -39,9 +40,14 @@ export function classifyCursorToolVisibility(toolCall: unknown): CursorToolVisib
 		lifecycleTitle: replayActivityTitle ?? config?.lifecycleTitle,
 		lifecycleEligible: config?.lifecycleEligible ?? false,
 		fastLocalDiscovery: config?.fastLocalDiscovery ?? false,
+		sideEffect: config?.sideEffect ?? false,
 	};
 }
 
 export function isFastLocalDiscoveryTool(toolCall: unknown): boolean {
 	return classifyCursorToolVisibility(toolCall).fastLocalDiscovery;
+}
+
+export function isSideEffectCursorTool(toolCall: unknown): boolean {
+	return classifyCursorToolVisibility(toolCall).sideEffect;
 }

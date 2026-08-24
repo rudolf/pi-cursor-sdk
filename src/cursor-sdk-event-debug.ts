@@ -41,6 +41,7 @@ const MAX_CURSOR_SDK_EVENT_DEBUG_JSONL_BYTES = 2 * 1024 * 1024;
 export type CursorSdkDisplayDecisionAction =
 	| "skip-duplicate"
 	| "skip-incomplete-fast-local"
+	| "skip-incomplete-text-produced"
 	| "queue_replay"
 	| "emit_trace"
 	| "ignore-bridge";

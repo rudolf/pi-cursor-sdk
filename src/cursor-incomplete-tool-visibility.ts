@@ -46,15 +46,17 @@ export function buildIncompleteCursorToolRunOutcome(
 }
 
 export function resolveIncompleteCursorToolVisibility(
-	toolCall: unknown,
+	_toolCall: unknown,
 	outcome: IncompleteCursorToolRunOutcome,
 ): IncompleteCursorToolVisibilityDecision {
-	const visibility = classifyCursorToolVisibility(toolCall);
 	if (
 		outcome.reason === DISCARDED_INCOMPLETE_TOOL_CALL_REASON &&
-		outcome.assistantTextProduced &&
-		visibility.fastLocalDiscovery
+		outcome.assistantTextProduced
 	) {
+		// Started-without-completion after a text-producing finished run is a
+		// stale SDK start event. Replaying it as a cursor card flips the Pi
+		// turn to toolUse and emits an empty follow-up stop. Hide all of them,
+		// not only fast-local discovery.
 		return "debugOnly";
 	}
 	return "emit";

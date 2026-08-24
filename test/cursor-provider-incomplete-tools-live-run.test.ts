@@ -109,7 +109,7 @@ describe("streamCursor incomplete native replay tools", () => {
 		expect(mockDispose).toHaveBeenCalledTimes(1);
 	});
 
-	it("replays incomplete external Cursor tools as neutral cursor activity cards before final text", async () => {
+	it("does not replay incomplete external Cursor tools after a text-producing finished run", async () => {
 		process.env.PI_CURSOR_NATIVE_TOOL_DISPLAY = "1";
 		const registeredTools: RegisteredTool[] = [];
 		await registerNativeToolDisplayForTest(registeredTools);
@@ -140,33 +140,67 @@ describe("streamCursor incomplete native replay tools", () => {
 		resolveRun({ id: "run-1", status: "finished", result: "done after incomplete MCP" });
 		const firstEvents = await firstEventsPromise;
 		const firstDone = getDoneEvent(firstEvents);
-		const toolCalls = firstDone.message.content.filter(isToolCallBlock);
 
-		expect(firstDone.reason).toBe("toolUse");
-		expect(toolCalls).toHaveLength(1);
-		expect(toolCalls[0]?.name).toBe("cursor");
-		expect(toolCalls[0]?.arguments).toMatchObject({
-			activityTitle: "Cursor MCP",
-			activitySummary: "missing completion",
+		expect(firstDone.reason).toBe("stop");
+		expect(collectTextDeltas(firstEvents)).toBe("done after incomplete MCP");
+		expect(firstDone.message.content.find(isToolCallBlock)).toBeUndefined();
+		expect(hasEventType(firstEvents, "toolcall_start")).toBe(false);
+		expect(nativeToolDisplayTestUtils.nativeToolResultCount()).toBe(0);
+		expect(cursorProviderTestUtils.pendingCursorNativeRunCount()).toBe(0);
+	});
+
+	it("does not replay incomplete shell or edit after a text-producing finished run", async () => {
+		process.env.PI_CURSOR_NATIVE_TOOL_DISPLAY = "1";
+		const registeredTools: RegisteredTool[] = [];
+		await registerNativeToolDisplayForTest(registeredTools);
+
+		let resolveRun: (result: { id: string; status: "finished"; result: string }) => void = () => {};
+		const runWait = vi.fn(
+			() =>
+				new Promise<{ id: string; status: "finished"; result: string }>((resolve) => {
+					resolveRun = resolve;
+				}),
+		);
+		const mockSend = vi.fn().mockImplementation(async (_msg: unknown, opts: { onDelta: CursorDeltaHandler }) => {
+			opts.onDelta({
+				update: {
+					type: "tool-call-started",
+					toolCall: { name: "shell", args: { command: "cat page.tsx" } },
+					callId: "c-shell",
+				},
+			});
+			opts.onDelta({
+				update: {
+					type: "tool-call-started",
+					toolCall: { name: "edit", args: { path: "src/app/explain/page.tsx" } },
+					callId: "c-edit",
+				},
+			});
+			return {
+				id: "run-1",
+				agentId: "agent-1",
+				status: "running",
+				wait: runWait,
+				cancel: vi.fn(),
+				supports: () => true,
+				unsupportedReason: () => undefined,
+			};
 		});
-		expect(nativeToolDisplayTestUtils.nativeToolResultCount()).toBe(1);
+		mockCreatedAgent({ send: mockSend });
 
-		const replayContext = makeContext();
-		replayContext.messages = [
-			...replayContext.messages,
-			firstDone.message,
-			{
-				role: "toolResult" as const,
-				toolCallId: toolCalls[0]!.id,
-				toolName: "cursor",
-				content: [{ type: "text" as const, text: "Cursor MCP did not complete" }],
-				isError: true,
-				timestamp: 2,
-			},
-		];
-		const finalEvents = await collectEvents(streamCursor(makeModel(), replayContext, { apiKey: "test-key" }));
-		expect(getDoneEvent(finalEvents).reason).toBe("stop");
-		expect(collectTextDeltas(finalEvents)).toBe("done after incomplete MCP");
+		const eventsPromise = collectEvents(streamCursor(makeModel(), makeContext(), { apiKey: "test-key" }));
+		await vi.waitFor(() => expect(mockSend).toHaveBeenCalled());
+		resolveRun({ id: "run-1", status: "finished", result: "File tools failed this turn" });
+		const events = await eventsPromise;
+		const done = getDoneEvent(events);
+
+		expect(done.reason).toBe("stop");
+		expect(collectTextDeltas(events)).toBe("File tools failed this turn");
+		expect(collectThinkingDeltas(events)).toContain("Cursor shell did not complete");
+		expect(collectThinkingDeltas(events)).toContain("Cursor edit did not complete");
+		expect(done.message.content.find(isToolCallBlock)).toBeUndefined();
+		expect(hasEventType(events, "toolcall_start")).toBe(false);
+		expect(nativeToolDisplayTestUtils.nativeToolResultCount()).toBe(0);
 		expect(cursorProviderTestUtils.pendingCursorNativeRunCount()).toBe(0);
 	});
 

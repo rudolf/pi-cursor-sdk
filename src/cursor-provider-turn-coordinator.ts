@@ -13,7 +13,13 @@ import {
 	type IncompleteCursorToolRunOutcome,
 } from "./cursor-incomplete-tool-visibility.js";
 import { getToolName } from "./cursor-transcript-utils.js";
-import { getNormalizedCursorToolName } from "./cursor-tool-visibility.js";
+import {
+	getNormalizedCursorToolName,
+	isFastLocalDiscoveryTool,
+	isSideEffectCursorTool,
+} from "./cursor-tool-visibility.js";
+import { getCursorSessionScopeKey } from "./cursor-session-scope.js";
+import { invalidateSessionAgent } from "./cursor-session-agent.js";
 import { buildCursorPiToolDisplay } from "./cursor-tool-transcript.js";
 import { getField } from "./cursor-record-utils.js";
 import { CursorTurnDisplayRouter } from "./cursor-provider-turn-display-router.js";
@@ -112,8 +118,12 @@ export class CursorSdkTurnCoordinator {
 
 	discardIncompleteStartedToolCalls(
 		outcome: IncompleteCursorToolRunOutcome = buildIncompleteCursorToolRunOutcome(),
-	): void {
+	): { discarded: number; discardedSideEffect: number } {
+		let discarded = 0;
+		let discardedSideEffect = 0;
 		for (const [callId, toolCall] of this.ledger.startedToolCallEntries()) {
+			discarded += 1;
+			if (isSideEffectCursorTool(toolCall)) discardedSideEffect += 1;
 			const toolName = getNormalizedCursorToolName(toolCall);
 			recordDiscardedIncompleteStartedToolCall(this.debugRecorder, process.env, {
 				toolName,
@@ -127,7 +137,15 @@ export class CursorSdkTurnCoordinator {
 					visibilityDecision === "debugOnly" && outcome.assistantTextProduced
 						? "successful-run-text-produced"
 						: visibilityDecision,
+					isFastLocalDiscoveryTool(toolCall)
+						? "skip-incomplete-fast-local"
+						: "skip-incomplete-text-produced",
 				);
+				if (isFastLocalDiscoveryTool(toolCall)) continue;
+				const traceAction = this.displayRouter.routeIncompleteStartedToolCall(toolCall, outcome.reason, {
+					forceTrace: true,
+				});
+				if (traceAction) this.displayRouter.emitDisplayAction(traceAction);
 				continue;
 			}
 			const action = this.displayRouter.routeIncompleteStartedToolCall(toolCall, outcome.reason);
@@ -136,6 +154,10 @@ export class CursorSdkTurnCoordinator {
 		this.ledger.clearStartedToolCalls();
 		this.shellOutput.clear();
 		this.lifecycleEmitter.clear();
+		if (discardedSideEffect > 0 || outcome.reason === "sdk-failure") {
+			invalidateSessionAgent(getCursorSessionScopeKey(), { deadTransport: true });
+		}
+		return { discarded, discardedSideEffect };
 	}
 
 	closeTraceBlock(): void {

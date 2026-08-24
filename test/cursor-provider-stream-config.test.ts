@@ -497,7 +497,8 @@ describe("streamCursor prompt and model config", () => {
 
 		const sentMessage = mockSend.mock.calls[0]?.[0] as { text: string };
 		expect(sentMessage.text).toContain("Cursor SDK tool boundary:");
-		expect(sentMessage.text).toContain("Call only Cursor SDK/MCP tools exposed in this run");
+		expect(sentMessage.text).toContain("Prefer Cursor SDK host tools when they overlap a pi tool");
+		expect(sentMessage.text).toContain("Callable names are the Cursor SDK/MCP tools exposed this run");
 		expect(sentMessage.text).toContain("Callable tool surfaces this run:");
 		expect(sentMessage.text).toContain("Cursor host/MCP");
 		expect(sentMessage.text).not.toContain("Bridged pi tools:");
