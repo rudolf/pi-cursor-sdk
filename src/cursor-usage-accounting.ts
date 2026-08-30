@@ -8,6 +8,11 @@ import {
 } from "./context.js";
 import { asRecord, getNumber } from "./cursor-record-utils.js";
 import type { CursorRuntime } from "./cursor-config.js";
+import {
+	CURSOR_COMPACTION_SUMMARY_PREFIX,
+	getCursorSessionCompactionWatermark,
+	retireCursorSessionCompactionWatermarkAfterAcceptedOccupancy,
+} from "./cursor-session-compaction-watermark.js";
 
 export interface CursorUsagePromptOptions extends CursorPromptOptions {
 	maxInputTokens: number;
@@ -129,17 +134,41 @@ function isCompatibleCursorAssistantMeasurement(assistant: AssistantMessage, mod
 	return assistant.api === model.api && assistant.provider === model.provider && assistant.model === model.id;
 }
 
+function readMessageText(message: Context["messages"][number]): string {
+	const content = "content" in message ? message.content : undefined;
+	if (typeof content === "string") return content;
+	if (!Array.isArray(content)) return "";
+	return content
+		.flatMap((block) => (block && typeof block === "object" && "type" in block && block.type === "text" && "text" in block && typeof block.text === "string" ? [block.text] : []))
+		.join("");
+}
+
+function isCompactionSummaryUserMessage(message: Context["messages"][number]): boolean {
+	return message.role === "user" && readMessageText(message).startsWith(CURSOR_COMPACTION_SUMMARY_PREFIX);
+}
+
+function normalizeTokensBefore(value: unknown): number | undefined {
+	return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.floor(value) : undefined;
+}
+
 function getLatestCompactionBoundary(context: Context): { index: number; tokensBefore?: number } | undefined {
+	const watermarkTokensBefore = getCursorSessionCompactionWatermark()?.tokensBefore;
 	for (let index = context.messages.length - 1; index >= 0; index -= 1) {
 		const message = context.messages[index] as { role?: string; tokensBefore?: number };
-		if (message.role !== "compactionSummary") continue;
-		const tokensBefore = message.tokensBefore;
+		if (message.role !== "compactionSummary" && !isCompactionSummaryUserMessage(context.messages[index])) continue;
 		return {
 			index,
-			tokensBefore: Number.isFinite(tokensBefore) && tokensBefore !== undefined && tokensBefore > 0 ? Math.floor(tokensBefore) : undefined,
+			tokensBefore: watermarkTokensBefore ?? normalizeTokensBefore(message.tokensBefore),
 		};
 	}
+	if (watermarkTokensBefore !== undefined) {
+		return { index: -1, tokensBefore: watermarkTokensBefore };
+	}
 	return undefined;
+}
+
+function isStaleCompactionOccupancy(total: number, tokensBefore: number | undefined): boolean {
+	return tokensBefore !== undefined && total >= tokensBefore;
 }
 
 function getLastAcceptedContextOccupancy(context: Context, model: Model<Api>): number {
@@ -155,7 +184,7 @@ function getLastAcceptedContextOccupancy(context: Context, model: Model<Api>): n
 		const total =
 			usage.totalTokens || usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
 		if (!Number.isFinite(total) || total <= 0 || total > model.contextWindow) continue;
-		if (boundary?.tokensBefore !== undefined && total >= boundary.tokensBefore) continue;
+		if (isStaleCompactionOccupancy(total, boundary?.tokensBefore)) continue;
 		return total;
 	}
 	return 0;
@@ -196,6 +225,7 @@ function applyResolvedCursorOccupancy(
 ): void {
 	if (localTurn && isCurrentLocalOccupancy(localTurn, model, context)) {
 		partial.usage.totalTokens = localTurn.inputTokens + localTurn.outputTokens;
+		retireCursorSessionCompactionWatermarkAfterAcceptedOccupancy(partial.usage.totalTokens);
 		return;
 	}
 	applyCursorOccupancyEstimate(partial, model, context);

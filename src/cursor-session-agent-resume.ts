@@ -5,6 +5,11 @@ import type { SessionCursorAgentSendState } from "./cursor-session-agent.js";
 import { asRecord } from "./cursor-record-utils.js";
 import { getCursorSessionScopeKey } from "./cursor-session-scope.js";
 import type { CursorSessionStoreIdentity } from "./cursor-session-store.js";
+import {
+	recordCursorSessionCompactionWatermark,
+	requireSessionCursorAgentCreateAfterCompaction,
+	resetCursorSessionCompactionWatermarksForTests,
+} from "./cursor-session-compaction-watermark.js";
 
 export const CURSOR_SESSION_AGENT_RESUME_ENTRY_TYPE = "cursor-sdk-agent-resume";
 
@@ -462,16 +467,22 @@ export function registerCursorSessionAgentResume(pi: CursorSessionAgentResumeExt
 	});
 	pi.on("session_compact", (event, ctx) => {
 		state.pendingHandle = undefined;
+		state.activeHandle = undefined;
+		state.lastBranchHandle = undefined;
 		resumeHandlePersistSuppressed = false;
+		recordCursorSessionCompactionWatermark(event.compactionEntry.tokensBefore, event.compactionEntry.timestamp);
+		requireSessionCursorAgentCreateAfterCompaction();
 		const branch = ctx.sessionManager.getBranch();
 		if (branch.length > 0) {
 			restoreFromSessionManager(ctx.sessionManager);
-			return;
+		} else {
+			state.compactionGeneration += 1;
+			state.branchPathHash = hashBranchStep(state.branchPathHash, event.compactionEntry);
 		}
+		// Restore may re-adopt a gen-0 handle when the compaction entry is not yet on the
+		// branch. A pre-compact local agent must never be resumed.
 		state.activeHandle = undefined;
 		state.lastBranchHandle = undefined;
-		state.compactionGeneration += 1;
-		state.branchPathHash = hashBranchStep(state.branchPathHash, event.compactionEntry);
 	});
 }
 
@@ -493,6 +504,7 @@ function resetStateForTests(): void {
 	state.pendingHandle = undefined;
 	state.unownedUserEntryIds = new Set();
 	resumeHandlePersistSuppressed = false;
+	resetCursorSessionCompactionWatermarksForTests();
 }
 
 export const __testUtils = {

@@ -1,13 +1,21 @@
 import { toNamespacedPath } from "node:path";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { computeCursorContextFingerprint } from "../src/context.js";
-import { __testUtils as cursorSessionScopeTestUtils } from "../src/cursor-session-scope.js";
-import { __testUtils as resumeTestUtils } from "../src/cursor-session-agent-resume.js";
+import {
+	registerCursorSessionScope,
+	__testUtils as cursorSessionScopeTestUtils,
+} from "../src/cursor-session-scope.js";
+import {
+	CURSOR_SESSION_AGENT_RESUME_ENTRY_TYPE,
+	getMatchingCursorSessionAgentResumeHandle,
+	registerCursorSessionAgentResume,
+	__testUtils as resumeTestUtils,
+} from "../src/cursor-session-agent-resume.js";
 import {
 	acquireSessionCursorAgent,
 	__testUtils as sessionAgentTestUtils,
 } from "../src/cursor-session-agent.js";
-import { makeContext } from "./helpers/pi-harness.js";
+import { createPiHarness, makeContext } from "./helpers/pi-harness.js";
 import { installCursorSessionStoreMock } from "./helpers/cursor-session-store.js";
 import { buildCursorSessionStateRoot } from "../src/cursor-session-store.js";
 
@@ -418,6 +426,225 @@ describe("cursor-session-agent local resume", () => {
 				incrementalSendCount: 0,
 			}),
 		});
+	});
+
+	it("does not Agent.resume after session_compact on a non-empty branch with a gen-0 handle", async () => {
+		installCursorSessionStoreMock();
+		const pi = createPiHarness();
+		registerCursorSessionScope(pi);
+		registerCursorSessionAgentResume(pi);
+		const scopeKey = "/tmp/sessions/test.jsonl";
+		const createAgent = vi.fn().mockResolvedValue({ agentId: "agent-post-compact", [Symbol.asyncDispose]: vi.fn().mockResolvedValue(undefined) });
+		const resumeAgent = vi.fn().mockResolvedValue({ agentId: "agent-pre-compact", [Symbol.asyncDispose]: vi.fn().mockResolvedValue(undefined) });
+		const params = {
+			apiKey: "test-key",
+			agentMode: "agent" as const,
+			cwd: "/tmp/project",
+			modelSelection: { id: "composer-2.5" },
+			localResume: true,
+			createAgent,
+			resumeAgent,
+		};
+		cursorSessionScopeTestUtils.set("/tmp/project", scopeKey);
+		const poolKey = sessionAgentTestUtils.buildSessionAgentPoolKey(scopeKey, params);
+		const handle = {
+			version: 1 as const,
+			runtime: "local" as const,
+			agentId: "agent-pre-compact",
+			scopeKey,
+			sessionFile: scopeKey,
+			sessionId: "session-1",
+			cwd: "/tmp/project",
+			poolKey,
+			branchPathHash: resumeTestUtils.EMPTY_BRANCH_HASH,
+			compactionGeneration: 0,
+			sendState: { bootstrapped: true, contextFingerprint: "fp", incrementalSendCount: 4 },
+			createdAt: "2026-08-27T18:01:00.000Z",
+		};
+		const first = {
+			type: "message" as const,
+			id: "u1",
+			parentId: null,
+			timestamp: "2026-08-27T18:01:00.000Z",
+			message: { role: "user" as const, content: "hello", timestamp: 1 },
+		};
+		const recorded = {
+			type: "custom" as const,
+			id: "r1",
+			parentId: "u1",
+			timestamp: "2026-08-27T18:01:01.000Z",
+			customType: CURSOR_SESSION_AGENT_RESUME_ENTRY_TYPE,
+			data: handle,
+		};
+		const compact = {
+			type: "compaction" as const,
+			id: "c1",
+			parentId: "r1",
+			timestamp: "2026-08-30T09:28:24.560Z",
+			summary: "compacted",
+			firstKeptEntryId: "u2",
+			tokensBefore: 231_074,
+		};
+		const after = {
+			type: "message" as const,
+			id: "u2",
+			parentId: "c1",
+			timestamp: "2026-08-30T09:29:00.000Z",
+			message: { role: "user" as const, content: "continue", timestamp: 2 },
+		};
+
+		await pi.runSessionStart({
+			cwd: "/tmp/project",
+			sessionManager: {
+				getSessionFile: vi.fn(() => scopeKey),
+				getSessionId: vi.fn(() => "session-1"),
+				getBranch: vi.fn(() => [first, recorded]),
+				getEntries: vi.fn(() => [first, recorded]),
+			},
+		});
+		resumeTestUtils.set({
+			scopeKey: resumeTestUtils.state.scopeKey,
+			sessionFile: resumeTestUtils.state.sessionFile,
+			sessionId: resumeTestUtils.state.sessionId,
+			cwd: resumeTestUtils.state.cwd,
+			repoRoot: resumeTestUtils.state.repoRoot,
+			branchPathHash: resumeTestUtils.EMPTY_BRANCH_HASH,
+			compactionGeneration: 0,
+			activeHandle: {
+				...handle,
+				scopeKey: resumeTestUtils.state.scopeKey,
+				sessionFile: resumeTestUtils.state.sessionFile,
+				sessionId: resumeTestUtils.state.sessionId,
+				cwd: resumeTestUtils.state.cwd,
+				repoRoot: resumeTestUtils.state.repoRoot,
+			},
+		});
+
+		await pi.runSessionCompact({
+			compactionEntry: compact,
+		}, {
+			sessionManager: {
+				getSessionFile: vi.fn(() => scopeKey),
+				getSessionId: vi.fn(() => "session-1"),
+				getBranch: vi.fn(() => [first, recorded, compact, after]),
+				getEntries: vi.fn(() => [first, recorded, compact, after]),
+			},
+		});
+
+		expect(getMatchingCursorSessionAgentResumeHandle(poolKey)).toBeUndefined();
+
+		const lease = await acquireSessionCursorAgent(params);
+		expect(resumeAgent).not.toHaveBeenCalled();
+		expect(createAgent).toHaveBeenCalledTimes(1);
+		expect(lease.resumed).toBe(false);
+		expect(lease.agent.agentId).toBe("agent-post-compact");
+	});
+
+	it("still force-creates when before_agent_start re-adopts a gen-0 handle without the compaction entry", async () => {
+		installCursorSessionStoreMock();
+		const pi = createPiHarness();
+		registerCursorSessionScope(pi);
+		registerCursorSessionAgentResume(pi);
+		const scopeKey = "/tmp/sessions/test.jsonl";
+		const createAgent = vi.fn().mockResolvedValue({ agentId: "agent-post-compact", [Symbol.asyncDispose]: vi.fn().mockResolvedValue(undefined) });
+		const resumeAgent = vi.fn().mockResolvedValue({ agentId: "agent-pre-compact", [Symbol.asyncDispose]: vi.fn().mockResolvedValue(undefined) });
+		const params = {
+			apiKey: "test-key",
+			agentMode: "agent" as const,
+			cwd: "/tmp/project",
+			modelSelection: { id: "composer-2.5" },
+			localResume: true,
+			createAgent,
+			resumeAgent,
+		};
+		cursorSessionScopeTestUtils.set("/tmp/project", scopeKey);
+		const first = {
+			type: "message" as const,
+			id: "u1",
+			parentId: null,
+			timestamp: "2026-08-27T18:01:00.000Z",
+			message: { role: "user" as const, content: "hello", timestamp: 1 },
+		};
+		const branchHash = resumeTestUtils.hashBranchStep(resumeTestUtils.EMPTY_BRANCH_HASH, first);
+		const poolKey = sessionAgentTestUtils.buildSessionAgentPoolKey(scopeKey, params);
+		const handle = {
+			version: 1 as const,
+			runtime: "local" as const,
+			agentId: "agent-pre-compact",
+			scopeKey,
+			sessionFile: scopeKey,
+			sessionId: "session-1",
+			cwd: "/tmp/project",
+			poolKey,
+			branchPathHash: branchHash,
+			compactionGeneration: 0,
+			sendState: { bootstrapped: true, contextFingerprint: "fp", incrementalSendCount: 4 },
+			createdAt: "2026-08-27T18:01:00.000Z",
+		};
+		const recorded = {
+			type: "custom" as const,
+			id: "r1",
+			parentId: "u1",
+			timestamp: "2026-08-27T18:01:01.000Z",
+			customType: CURSOR_SESSION_AGENT_RESUME_ENTRY_TYPE,
+			data: handle,
+		};
+		const compact = {
+			type: "compaction" as const,
+			id: "c1",
+			parentId: "r1",
+			timestamp: "2026-08-30T09:28:24.560Z",
+			summary: "compacted",
+			firstKeptEntryId: "u2",
+			tokensBefore: 231_074,
+		};
+
+		await pi.runSessionStart({
+			cwd: "/tmp/project",
+			sessionManager: {
+				getSessionFile: vi.fn(() => scopeKey),
+				getSessionId: vi.fn(() => "session-1"),
+				getBranch: vi.fn(() => [first, recorded]),
+				getEntries: vi.fn(() => [first, recorded]),
+			},
+		});
+		recorded.data = {
+			...handle,
+			scopeKey: resumeTestUtils.state.scopeKey,
+			sessionFile: resumeTestUtils.state.sessionFile ?? handle.sessionFile,
+			sessionId: resumeTestUtils.state.sessionId ?? handle.sessionId,
+			cwd: resumeTestUtils.state.cwd,
+			...(resumeTestUtils.state.repoRoot ? { repoRoot: resumeTestUtils.state.repoRoot } : {}),
+		};
+
+		await pi.runSessionCompact({
+			compactionEntry: compact,
+		}, {
+			sessionManager: {
+				getSessionFile: vi.fn(() => scopeKey),
+				getSessionId: vi.fn(() => "session-1"),
+				getBranch: vi.fn(() => [first, recorded]),
+				getEntries: vi.fn(() => [first, recorded]),
+			},
+		});
+		expect(getMatchingCursorSessionAgentResumeHandle(poolKey)).toBeUndefined();
+
+		await pi.runBeforeAgentStart({
+			cwd: "/tmp/project",
+			sessionManager: {
+				getSessionFile: vi.fn(() => scopeKey),
+				getSessionId: vi.fn(() => "session-1"),
+				getBranch: vi.fn(() => [first, recorded]),
+				getEntries: vi.fn(() => [first, recorded]),
+			},
+		});
+		expect(getMatchingCursorSessionAgentResumeHandle(poolKey)).toMatchObject({ agentId: "agent-pre-compact" });
+
+		const lease = await acquireSessionCursorAgent(params);
+		expect(resumeAgent).not.toHaveBeenCalled();
+		expect(createAgent).toHaveBeenCalledTimes(1);
+		expect(lease.resumed).toBe(false);
+		expect(lease.agent.agentId).toBe("agent-post-compact");
 	});
 
 });

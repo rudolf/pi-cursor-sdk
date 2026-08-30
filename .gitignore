@@ -32,3 +32,6 @@ dogfood-output/
 
 # Crabbox local lease metadata (do not commit)
 .crabbox/
+
+# Fleet/Herdr local runtime state (do not commit)
+.fleet-runtime.json

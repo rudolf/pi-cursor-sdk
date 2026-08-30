@@ -541,6 +541,77 @@ describe("cursor-session-agent-resume", () => {
 		expect(getMatchingCursorSessionAgentResumeHandle("pool-1")).toBeUndefined();
 	});
 
+	it("drops a gen-0 resume handle on session_compact even when the branch is non-empty", async () => {
+		const pi = createPiHarness();
+		registerCursorSessionScope(pi);
+		registerCursorSessionAgentResume(pi);
+		const first = messageEntry("u1", null);
+		const handle: CursorSessionAgentResumeEntryData = {
+			version: 1,
+			runtime: "local",
+			agentId: "agent-pre-compact",
+			scopeKey: "/tmp/session.jsonl",
+			sessionFile: "/tmp/session.jsonl",
+			sessionId: "session-1",
+			cwd: "/tmp/project",
+			poolKey: "pool-1",
+			branchPathHash: resumeTestUtils.EMPTY_BRANCH_HASH,
+			compactionGeneration: 0,
+			sendState: { bootstrapped: true, contextFingerprint: "fp", incrementalSendCount: 4 },
+			createdAt: "2026-08-27T18:01:00.000Z",
+		};
+		const recorded = resumeEntry("r1", "u1", handle);
+		const compact = {
+			type: "compaction" as const,
+			id: "c1",
+			parentId: "r1",
+			timestamp: "2026-08-30T09:28:24.560Z",
+			summary: "compacted",
+			firstKeptEntryId: "u2",
+			tokensBefore: 231_074,
+		};
+		const after = messageEntry("u2", "c1");
+
+		await pi.runSessionStart({
+			cwd: "/tmp/project",
+			sessionManager: {
+				getSessionFile: vi.fn(() => "/tmp/session.jsonl"),
+				getSessionId: vi.fn(() => "session-1"),
+				getBranch: vi.fn(() => [first, recorded]),
+				getEntries: vi.fn(() => [first, recorded]),
+			},
+		});
+		resumeTestUtils.set({
+			activeHandle: {
+				...handle,
+				scopeKey: resumeTestUtils.state.scopeKey,
+				sessionFile: resumeTestUtils.state.sessionFile,
+				sessionId: resumeTestUtils.state.sessionId,
+				cwd: resumeTestUtils.state.cwd,
+				repoRoot: resumeTestUtils.state.repoRoot,
+			},
+			lastBranchHandle: handle,
+			compactionGeneration: 0,
+		});
+		expect(getMatchingCursorSessionAgentResumeHandle("pool-1")).toMatchObject({ agentId: "agent-pre-compact" });
+
+		await pi.runSessionCompact({
+			compactionEntry: compact,
+		}, {
+			sessionManager: {
+				getSessionFile: vi.fn(() => "/tmp/session.jsonl"),
+				getSessionId: vi.fn(() => "session-1"),
+				getBranch: vi.fn(() => [first, recorded, compact, after]),
+				getEntries: vi.fn(() => [first, recorded, compact, after]),
+			},
+		});
+
+		expect(getMatchingCursorSessionAgentResumeHandle("pool-1")).toBeUndefined();
+		expect(resumeTestUtils.state.activeHandle).toBeUndefined();
+		expect(resumeTestUtils.state.lastBranchHandle).toBeUndefined();
+		expect(resumeTestUtils.state.compactionGeneration).toBe(1);
+	});
+
 	it("does not flush a compaction-summarizer pending handle on the first later turn_end", async () => {
 		const pi = createPiHarness();
 		registerCursorSessionScope(pi);
