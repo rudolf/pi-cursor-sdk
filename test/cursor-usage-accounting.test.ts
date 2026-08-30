@@ -1,9 +1,9 @@
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { InteractionUpdateSchema, TurnEndedUpdateSchema } from "@cursor/sdk";
 import type { AssistantMessage, Context } from "@earendil-works/pi-ai";
-import { calculateContextTokens } from "@earendil-works/pi-coding-agent";
+import { calculateContextTokens, convertToLlm } from "@earendil-works/pi-coding-agent";
 import {
 	applyCursorApproximateUsage,
 	applyCursorUsage,
@@ -13,6 +13,12 @@ import {
 	readCursorSdkTurnUsage,
 	readCursorSdkTurnUsageFromUpdate,
 } from "../src/cursor-usage-accounting.js";
+import {
+	CURSOR_COMPACTION_SUMMARY_PREFIX,
+	getCursorSessionCompactionWatermark,
+	recordCursorSessionCompactionWatermark,
+	__testUtils as compactionWatermarkTestUtils,
+} from "../src/cursor-session-compaction-watermark.js";
 import { makeModel } from "./helpers/pi-harness.js";
 
 function makeAssistantMessage(content: AssistantMessage["content"]): AssistantMessage {
@@ -35,7 +41,28 @@ function makeAssistantMessage(content: AssistantMessage["content"]): AssistantMe
 	};
 }
 
+function makeWideModel(): ReturnType<typeof makeModel> {
+	return { ...makeModel(), contextWindow: 256_000 };
+}
+
+function applyEvidenceSessionCompactWatermark(): void {
+	recordCursorSessionCompactionWatermark(231_074, "2026-08-30T09:28:24.560Z");
+}
+
+function readMessageText(message: Context["messages"][number]): string {
+	const content = "content" in message ? message.content : undefined;
+	if (typeof content === "string") return content;
+	if (!Array.isArray(content)) return "";
+	return content
+		.flatMap((block) => (block && typeof block === "object" && "type" in block && block.type === "text" && "text" in block && typeof block.text === "string" ? [block.text] : []))
+		.join("");
+}
+
 describe("cursor usage accounting", () => {
+	beforeEach(() => {
+		compactionWatermarkTestUtils.reset();
+	});
+
 	it("counts assistant session output from text, thinking, and tool calls", () => {
 		const textOnly = makeAssistantMessage([{ type: "text", text: "Done." }]);
 		const withThinking = makeAssistantMessage([
@@ -433,5 +460,134 @@ describe("cursor usage accounting", () => {
 		expect(partial.usage.cacheRead).toBe(0);
 		expect(partial.usage.totalTokens).toBeLessThan(model.contextWindow);
 		expect(partial.usage.totalTokens).not.toBe(1_132_478);
+	});
+
+	it("rejects a 231k local turn after convertToLlm using the session compact watermark", () => {
+		const model = makeWideModel();
+		const llmMessages = convertToLlm([
+			{
+				role: "compactionSummary",
+				summary: "Prior turns were compacted.",
+				tokensBefore: 231_074,
+				timestamp: Date.parse("2026-08-30T09:28:24.560Z"),
+			},
+			{ role: "user", content: "tiny follow-up", timestamp: Date.parse("2026-08-30T09:29:00.000Z") },
+		] as Parameters<typeof convertToLlm>[0]);
+		expect(llmMessages[0]).toMatchObject({ role: "user" });
+		expect(readMessageText(llmMessages[0]).startsWith(CURSOR_COMPACTION_SUMMARY_PREFIX)).toBe(true);
+		applyEvidenceSessionCompactWatermark();
+
+		const context: Context = { systemPrompt: "Be helpful.", messages: llmMessages };
+		const partial = makeAssistantMessage([{ type: "text", text: "Hi." }]);
+		partial.model = model.id;
+		applyCursorUsage(partial, model, context, 7, {
+			runtime: "local",
+			turn: { inputTokens: 230_883, outputTokens: 191, cacheReadTokens: 0, cacheWriteTokens: 0 },
+			billed: { inputTokens: 24_271, outputTokens: 191, cacheReadTokens: 0, cacheWriteTokens: 0 },
+		});
+
+		expect(partial.usage.input).toBe(24_271);
+		expect(partial.usage.output).toBe(191);
+		expect(partial.usage.totalTokens).toBe(estimateCursorContextTotalTokens(partial, model, context));
+		expect(partial.usage.totalTokens).toBeLessThan(231_074);
+		expect(partial.usage.totalTokens).not.toBe(231_074);
+	});
+
+	it("does not floor occupancy to a kept-tail assistant still carrying tokensBefore", () => {
+		const model = makeWideModel();
+		const kept = makeAssistantMessage([{ type: "text", text: "Kept." }]);
+		kept.usage = {
+			input: 24_271,
+			output: 191,
+			cacheRead: 0,
+			cacheWrite: 0,
+			totalTokens: 231_074,
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+		};
+		const llmMessages = convertToLlm([
+			{
+				role: "compactionSummary",
+				summary: "Prior turns were compacted.",
+				tokensBefore: 231_074,
+				timestamp: Date.parse("2026-08-30T09:28:24.560Z"),
+			},
+			kept,
+			{ role: "user", content: "tiny follow-up", timestamp: Date.parse("2026-08-30T09:29:00.000Z") },
+		] as Parameters<typeof convertToLlm>[0]);
+		applyEvidenceSessionCompactWatermark();
+
+		const context: Context = { systemPrompt: "Be helpful.", messages: llmMessages };
+		const partial = makeAssistantMessage([{ type: "text", text: "Hi." }]);
+		partial.model = model.id;
+		applyCursorUsage(partial, model, context, 7, {
+			runtime: "local",
+			turn: { inputTokens: 230_883, outputTokens: 191, cacheReadTokens: 0, cacheWriteTokens: 0 },
+			billed: { inputTokens: 548, outputTokens: 45, cacheReadTokens: 0, cacheWriteTokens: 0 },
+		});
+
+		expect(partial.usage.input).toBe(548);
+		expect(partial.usage.output).toBe(45);
+		expect(partial.usage.totalTokens).toBe(estimateCursorContextTotalTokens(partial, model, context));
+		expect(partial.usage.totalTokens).toBeLessThan(231_074);
+	});
+
+	it("replays the evidence-session 24271 billed / 231074 occupancy shape below tokensBefore", () => {
+		const model = makeWideModel();
+		const llmMessages = convertToLlm([
+			{
+				role: "compactionSummary",
+				summary: "o11y-agent-atlas compact summary placeholder",
+				tokensBefore: 231_074,
+				timestamp: Date.parse("2026-08-30T09:28:24.560Z"),
+			},
+			{ role: "user", content: "ok continue", timestamp: Date.parse("2026-08-30T09:29:00.000Z") },
+		] as Parameters<typeof convertToLlm>[0]);
+		applyEvidenceSessionCompactWatermark();
+
+		const context: Context = { systemPrompt: "Be helpful.", messages: llmMessages };
+		const partial = makeAssistantMessage([{ type: "text", text: "Continuing." }]);
+		partial.model = model.id;
+		applyCursorUsage(partial, model, context, 7, {
+			runtime: "local",
+			turn: { inputTokens: 230_883, outputTokens: 191, cacheReadTokens: 200_000, cacheWriteTokens: 0 },
+			billed: { inputTokens: 24_271, outputTokens: 191, cacheReadTokens: 0, cacheWriteTokens: 0 },
+		});
+
+		expect(partial.usage.totalTokens).toBeLessThan(50_000);
+		expect(partial.usage.totalTokens).not.toBe(231_074);
+		expect(partial.usage.totalTokens).toBe(estimateCursorContextTotalTokens(partial, model, context));
+	});
+
+	it("retires the compact watermark after the first accepted post-compact local occupancy", () => {
+		const model = makeWideModel();
+		const context: Context = {
+			systemPrompt: "Be helpful.",
+			messages: [{ role: "user", content: "Again", timestamp: 3 }],
+		};
+		applyEvidenceSessionCompactWatermark();
+		expect(getCursorSessionCompactionWatermark()?.tokensBefore).toBe(231_074);
+
+		const rejected = makeAssistantMessage([{ type: "text", text: "Stale." }]);
+		applyCursorUsage(rejected, model, context, 7, {
+			runtime: "local",
+			turn: { inputTokens: 230_883, outputTokens: 191, cacheReadTokens: 0, cacheWriteTokens: 0 },
+		});
+		expect(rejected.usage.totalTokens).toBeLessThan(231_074);
+		expect(getCursorSessionCompactionWatermark()?.tokensBefore).toBe(231_074);
+
+		const accepted = makeAssistantMessage([{ type: "text", text: "Fresh." }]);
+		applyCursorUsage(accepted, model, context, 7, {
+			runtime: "local",
+			turn: { inputTokens: 12_000, outputTokens: 40, cacheReadTokens: 11_000, cacheWriteTokens: 20 },
+		});
+		expect(accepted.usage.totalTokens).toBe(12_040);
+		expect(getCursorSessionCompactionWatermark()).toBeUndefined();
+
+		const grown = makeAssistantMessage([{ type: "text", text: "Grown." }]);
+		applyCursorUsage(grown, model, context, 7, {
+			runtime: "local",
+			turn: { inputTokens: 240_000, outputTokens: 80, cacheReadTokens: 200_000, cacheWriteTokens: 0 },
+		});
+		expect(grown.usage.totalTokens).toBe(240_080);
 	});
 });

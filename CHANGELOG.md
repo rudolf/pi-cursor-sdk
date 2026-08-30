@@ -9,6 +9,7 @@
 
 ### Fixed
 
+- After Pi `/compact`, occupancy `totalTokens` uses the converted post-compact prompt instead of the pre-compact `tokensBefore` watermark, and the next local acquire uses `Agent.create` rather than resuming the fat pre-compact agent.
 - Recreate a pooled local Cursor SDK agent after five minutes without a successful send instead of reusing a dead transport that Cursor reports as an invalid API key. Idle replacement uses `Agent.create`, not `Agent.resume`.
 - Skip late transcript `webSearch`/`webFetch` replay after a finished local run. `wait()` already ended the Cursor turn; backfilling those tools as `toolUse` dumped fetch bodies after the answer and then emitted an empty stop.
 - Do not replay incomplete Cursor tools after a text-producing finished run. Started-without-completion events were queued as cursor cards, which flipped Pi to `toolUse` and an empty stop.

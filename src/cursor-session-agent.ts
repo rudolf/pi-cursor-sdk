@@ -12,6 +12,10 @@ import {
 	getMatchingCursorSessionAgentResumeHandle,
 	persistCursorSessionAgentResumeHandle,
 } from "./cursor-session-agent-resume.js";
+import {
+	noteSessionCursorAgentCreatedAfterCompaction,
+	sessionCursorAgentCreateRequiredAfterCompaction,
+} from "./cursor-session-compaction-watermark.js";
 import type { CursorSdkEventDebugRecorder } from "./cursor-sdk-event-debug.js";
 import { loadCursorSdk, type CursorSdkModule } from "./cursor-sdk-runtime.js";
 import {
@@ -515,6 +519,7 @@ async function createSessionAgentEntry(
 		agent ??= await createAgent(buildAgentOptions());
 		if (!agent) throw new Error("Cursor SDK agent creation returned no agent");
 		if (!sessionStore) throw new Error("Cursor SDK session store was not opened");
+		if (!resumed) noteSessionCursorAgentCreatedAfterCompaction(scopeKey);
 
 		return {
 			status: "ready",
@@ -555,7 +560,7 @@ export function invalidateSessionAgent(
 export async function acquireSessionCursorAgent(params: SessionCursorAgentCreateParams): Promise<SessionCursorAgentLease> {
 	const scopeKey = getCursorSessionScopeKey();
 	const persistentStore = getCursorSessionFile() !== undefined;
-	let forceCreate = params.forceCreate === true;
+	let forceCreate = params.forceCreate === true || sessionCursorAgentCreateRequiredAfterCompaction(scopeKey);
 
 	while (true) {
 		assertScopeAcceptsAcquire(scopeKey);
