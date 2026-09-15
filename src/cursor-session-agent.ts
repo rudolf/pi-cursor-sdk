@@ -27,6 +27,17 @@ import {
 } from "./cursor-session-store.js";
 
 export const CURSOR_LOCAL_AGENT_IDLE_MS = 5 * 60 * 1000;
+export const CURSOR_LOCAL_AGENT_IDLE_MS_ENV = "PI_CURSOR_LOCAL_AGENT_IDLE_MS";
+const MAX_CURSOR_LOCAL_AGENT_IDLE_MS = 24 * 60 * 60 * 1000;
+
+/** Default 5 minutes. `PI_CURSOR_LOCAL_AGENT_IDLE_MS` may shorten/lengthen for smoke or dogfood. */
+export function resolveCursorLocalAgentIdleMs(env: NodeJS.ProcessEnv = process.env): number {
+	const raw = env[CURSOR_LOCAL_AGENT_IDLE_MS_ENV]?.trim();
+	if (!raw) return CURSOR_LOCAL_AGENT_IDLE_MS;
+	const parsed = Number(raw);
+	if (!Number.isFinite(parsed) || parsed < 1) return CURSOR_LOCAL_AGENT_IDLE_MS;
+	return Math.min(Math.trunc(parsed), MAX_CURSOR_LOCAL_AGENT_IDLE_MS);
+}
 
 export interface SessionCursorAgentSendState {
 	bootstrapped: boolean;
@@ -579,11 +590,12 @@ export async function acquireSessionCursorAgent(params: SessionCursorAgentCreate
 		if (state.status === "ready") {
 			if (
 				state.lastUsedAtMs !== undefined &&
-				nowMs() - state.lastUsedAtMs >= CURSOR_LOCAL_AGENT_IDLE_MS
+				nowMs() - state.lastUsedAtMs >= resolveCursorLocalAgentIdleMs()
 			) {
+				// Drop the in-memory transport (Cursor can report it as an invalid API key)
+				// but keep resumeEligible so the persisted handle can Agent.resume.
 				invalidateSessionAgent(scopeKey, { deadTransport: true });
 				await disposePoolEntryForScope(scopeKey);
-				forceCreate = true;
 				continue;
 			}
 			return leaseFromEntry(state, scopeKey, params, false);

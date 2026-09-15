@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
@@ -14,6 +15,8 @@ import {
 	getEntries,
 	getState,
 	latestResumeEntry,
+	lineageEntries,
+	parseIdleMs,
 	parseTimeout,
 	promptAbortAndRead,
 	promptAndRead,
@@ -48,6 +51,7 @@ ${nodeUsage}
 Environment:
   CURSOR_LOCAL_RESUME_SMOKE_MODEL          Cursor model id (default: cursor/grok-4.6:slow).
   CURSOR_LOCAL_RESUME_SMOKE_TIMEOUT_MS     Timeout in ms per model turn (default: 300000).
+  CURSOR_LOCAL_RESUME_SMOKE_IDLE_MS        Same-process idle wait for --idle (default: 8000).
   CURSOR_LOCAL_RESUME_SMOKE_KEEP_ARTIFACTS Keep temp artifacts when set to 1.
   CURSOR_LOCAL_RESUME_SMOKE_EXTENSION_PATH Packed extension path override (platform runner only).
   CURSOR_LOCAL_RESUME_SMOKE_ARTIFACT_DIR   Fixed artifact root (platform runner only).
@@ -609,6 +613,84 @@ async function runDefaultDryRunSmoke() {
 	}
 }
 
+async function runIdleSmoke() {
+	const timeoutMs = parseTimeout();
+	const idleMs = parseIdleMs();
+	const { artifactRoot, sessionDir, sessionId, seenMetadata } = createRunContext("pi-cursor-local-resume-idle-smoke-");
+	const marker = `LOCAL_RESUME_IDLE_${Date.now()}`;
+	let resumedAgentId;
+	const hostAuth = join(homedir(), ".pi", "agent", "auth.json");
+	const isolatedAuth = join(artifactRoot, "agent", "auth.json");
+	mkdirSync(dirname(isolatedAuth), { recursive: true });
+	if (existsSync(hostAuth)) {
+		copyFileSync(hostAuth, isolatedAuth);
+		chmodSync(isolatedAuth, 0o600);
+	}
+	console.error(scrubSmokeText(`[local-resume-smoke] artifacts: ${artifactRoot}`));
+	console.error(scrubSmokeText(`[local-resume-smoke] same-process idle ${idleMs}ms`));
+	try {
+		await withRpc({
+			artifactDir: artifactRoot,
+			sessionDir,
+			sessionId,
+			baseEnv: {
+				...process.env,
+				PI_CURSOR_LOCAL_AGENT_IDLE_MS: String(idleMs),
+			},
+		}, async (rpc) => {
+			const first = await promptAndRead({
+				rpc,
+				artifactDir: artifactRoot,
+				message: `Remember exact marker ${marker}. You must repeat it from conversation memory on my next turn. Reply exactly FIRST_OK.`,
+				timeoutMs,
+				seenMetadata,
+			});
+			assertTurnMetadata("first turn", first, { resumedAgent: false });
+
+			await new Promise((resolveWait) => setTimeout(resolveWait, idleMs + 500));
+
+			const second = await promptAndRead({
+				rpc,
+				artifactDir: artifactRoot,
+				message: "Repeat the exact LOCAL_RESUME_IDLE marker from my immediately previous message. Do not use tools or inspect files. Reply with only MARKER=<marker>.",
+				timeoutMs,
+				seenMetadata,
+			});
+			if (!second.text.includes(`MARKER=${marker}`)) {
+				fail("idle second turn did not recall marker", JSON.stringify({ expected: `MARKER=${marker}`, actual: second.text }, null, 2));
+			}
+			assertTurnMetadata("idle second turn", second, { resumedAgent: true });
+			resumedAgentId = second.metadata.run.agentId;
+			if (first.metadata.run.agentId !== second.metadata.run.agentId) {
+				fail("idle second turn did not resume the first local SDK agent", JSON.stringify({
+					first: first.metadata.run.agentId,
+					second: second.metadata.run.agentId,
+					firstSendPlan: first.metadata.providerMeta?.sendPlan,
+					secondSendPlan: second.metadata.providerMeta?.sendPlan,
+				}, null, 2));
+			}
+			const entries = await getEntries(rpc);
+			const lineage = lineageEntries(entries);
+			if (lineage.length !== 1) {
+				fail("idle session recorded more than one local agent lineage", JSON.stringify({
+					count: lineage.length,
+					agentIds: lineage.map((entry) => entry.data?.agentId),
+				}, null, 2));
+			}
+			if (lineage[0]?.data?.agentId !== first.metadata.run.agentId) {
+				fail("idle lineage agent id did not match the resumed agent", JSON.stringify({
+					lineage: lineage[0]?.data?.agentId,
+					agentId: first.metadata.run.agentId,
+				}, null, 2));
+			}
+		});
+		console.log("local-resume-idle-smoke-ok");
+		console.error(scrubSmokeText(`[local-resume-smoke] agent ${resumedAgentId} resumed after same-process idle`));
+	} finally {
+		cleanupArtifactRoot(artifactRoot);
+	}
+}
+
 const SMOKE_RUNNERS = {
 	restart: runSmoke,
 	safety: runSafetySmoke,
@@ -620,6 +702,7 @@ const SMOKE_RUNNERS = {
 	compaction: runCompactionSmoke,
 	defaultDryRun: runDefaultDryRunSmoke,
 	cleanup: runCleanupSmoke,
+	idle: runIdleSmoke,
 };
 
 function selectedRun() {

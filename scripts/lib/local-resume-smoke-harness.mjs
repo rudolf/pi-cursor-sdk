@@ -528,6 +528,21 @@ export function parseTimeout() {
 	return timeoutMs;
 }
 
+export function parseIdleMs() {
+	const idleMs = Number(process.env.CURSOR_LOCAL_RESUME_SMOKE_IDLE_MS || 8000);
+	if (!Number.isFinite(idleMs) || idleMs < 1)
+		fail("CURSOR_LOCAL_RESUME_SMOKE_IDLE_MS must be a positive number");
+	return Math.trunc(idleMs);
+}
+
+export function lineageEntries(entries) {
+	return (entries.entries ?? []).filter(
+		(entry) =>
+			entry?.type === "custom" &&
+			entry.customType === "cursor-sdk-agent-lineage",
+	);
+}
+
 export function cleanupArtifactRoot(artifactRoot) {
 	if (process.env.CURSOR_LOCAL_RESUME_SMOKE_KEEP_ARTIFACTS === "1") return;
 	try {
