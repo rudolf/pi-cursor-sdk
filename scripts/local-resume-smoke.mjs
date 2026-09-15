@@ -1,6 +1,5 @@
 #!/usr/bin/env node
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
@@ -619,13 +618,6 @@ async function runIdleSmoke() {
 	const { artifactRoot, sessionDir, sessionId, seenMetadata } = createRunContext("pi-cursor-local-resume-idle-smoke-");
 	const marker = `LOCAL_RESUME_IDLE_${Date.now()}`;
 	let resumedAgentId;
-	const hostAuth = join(homedir(), ".pi", "agent", "auth.json");
-	const isolatedAuth = join(artifactRoot, "agent", "auth.json");
-	mkdirSync(dirname(isolatedAuth), { recursive: true });
-	if (existsSync(hostAuth)) {
-		copyFileSync(hostAuth, isolatedAuth);
-		chmodSync(isolatedAuth, 0o600);
-	}
 	console.error(scrubSmokeText(`[local-resume-smoke] artifacts: ${artifactRoot}`));
 	console.error(scrubSmokeText(`[local-resume-smoke] same-process idle ${idleMs}ms`));
 	try {

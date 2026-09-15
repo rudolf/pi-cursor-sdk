@@ -167,6 +167,7 @@ describe("cursor-session-agent idle eviction", () => {
 		expect(resolveCursorLocalAgentIdleMs({})).toBe(CURSOR_LOCAL_AGENT_IDLE_MS);
 		expect(resolveCursorLocalAgentIdleMs({ [CURSOR_LOCAL_AGENT_IDLE_MS_ENV]: "8000" })).toBe(8000);
 		expect(resolveCursorLocalAgentIdleMs({ [CURSOR_LOCAL_AGENT_IDLE_MS_ENV]: "0" })).toBe(CURSOR_LOCAL_AGENT_IDLE_MS);
+		expect(resolveCursorLocalAgentIdleMs({ [CURSOR_LOCAL_AGENT_IDLE_MS_ENV]: "0.5" })).toBe(CURSOR_LOCAL_AGENT_IDLE_MS);
 		expect(resolveCursorLocalAgentIdleMs({ [CURSOR_LOCAL_AGENT_IDLE_MS_ENV]: "nope" })).toBe(CURSOR_LOCAL_AGENT_IDLE_MS);
 	});
 });

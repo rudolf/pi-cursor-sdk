@@ -529,10 +529,11 @@ export function parseTimeout() {
 }
 
 export function parseIdleMs() {
-	const idleMs = Number(process.env.CURSOR_LOCAL_RESUME_SMOKE_IDLE_MS || 8000);
-	if (!Number.isFinite(idleMs) || idleMs < 1)
-		fail("CURSOR_LOCAL_RESUME_SMOKE_IDLE_MS must be a positive number");
-	return Math.trunc(idleMs);
+	const parsed = Number(process.env.CURSOR_LOCAL_RESUME_SMOKE_IDLE_MS || 8000);
+	const idleMs = Math.trunc(parsed);
+	if (!Number.isFinite(parsed) || idleMs < 1)
+		fail("CURSOR_LOCAL_RESUME_SMOKE_IDLE_MS must be a positive integer");
+	return idleMs;
 }
 
 export function lineageEntries(entries) {

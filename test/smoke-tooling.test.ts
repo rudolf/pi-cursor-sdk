@@ -156,6 +156,7 @@ try {
 		expect(harnessSource).toContain("terminateChild(child, { graceMs: 15_000 })");
 		const smokeSource = readFileSync("scripts/local-resume-smoke.mjs", "utf8");
 		expect(smokeSource).toContain("Do not use tools or inspect files. Reply with only MARKER=<marker>.");
+		expect(smokeSource).not.toContain("auth.json");
 
 		const artifactRoot = mkdtempSync(join(tmpdir(), "local-resume-smoke-env-test-"));
 		try {
@@ -192,6 +193,22 @@ try {
 			expect(existsSync(env.PI_CODING_AGENT_DIR!)).toBe(true);
 		} finally {
 			rmSync(artifactRoot, { recursive: true, force: true });
+		}
+	});
+
+	it("rejects fractional CURSOR_LOCAL_RESUME_SMOKE_IDLE_MS before truncating to zero", async () => {
+		const { parseIdleMs } = await import("../scripts/lib/local-resume-smoke-harness.mjs");
+		const previous = process.env.CURSOR_LOCAL_RESUME_SMOKE_IDLE_MS;
+		try {
+			delete process.env.CURSOR_LOCAL_RESUME_SMOKE_IDLE_MS;
+			expect(parseIdleMs()).toBe(8000);
+			process.env.CURSOR_LOCAL_RESUME_SMOKE_IDLE_MS = "8000.9";
+			expect(parseIdleMs()).toBe(8000);
+			process.env.CURSOR_LOCAL_RESUME_SMOKE_IDLE_MS = "0.5";
+			expect(() => parseIdleMs()).toThrow(/positive integer/);
+		} finally {
+			if (previous === undefined) delete process.env.CURSOR_LOCAL_RESUME_SMOKE_IDLE_MS;
+			else process.env.CURSOR_LOCAL_RESUME_SMOKE_IDLE_MS = previous;
 		}
 	});
 

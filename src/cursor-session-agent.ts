@@ -35,8 +35,10 @@ export function resolveCursorLocalAgentIdleMs(env: NodeJS.ProcessEnv = process.e
 	const raw = env[CURSOR_LOCAL_AGENT_IDLE_MS_ENV]?.trim();
 	if (!raw) return CURSOR_LOCAL_AGENT_IDLE_MS;
 	const parsed = Number(raw);
-	if (!Number.isFinite(parsed) || parsed < 1) return CURSOR_LOCAL_AGENT_IDLE_MS;
-	return Math.min(Math.trunc(parsed), MAX_CURSOR_LOCAL_AGENT_IDLE_MS);
+	if (!Number.isFinite(parsed)) return CURSOR_LOCAL_AGENT_IDLE_MS;
+	const idleMs = Math.trunc(parsed);
+	if (idleMs < 1) return CURSOR_LOCAL_AGENT_IDLE_MS;
+	return Math.min(idleMs, MAX_CURSOR_LOCAL_AGENT_IDLE_MS);
 }
 
 export interface SessionCursorAgentSendState {
