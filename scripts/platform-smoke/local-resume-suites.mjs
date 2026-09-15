@@ -98,6 +98,16 @@ export const LOCAL_RESUME_SUITES = [
 		description: "Prove recorded-ID-only local SDK cleanup deletes an old recorded agent and preserves the current one.",
 		cursorCalls: 4,
 	},
+	{
+		key: "idle",
+		flag: "--idle",
+		suite: "cursor-local-resume-idle",
+		script: "smoke:local-resume:idle",
+		marker: "local-resume-idle-smoke-ok",
+		stderrPattern: /agent-[0-9a-f-]{36}\s+resumed after same-process idle/i,
+		description: "Prove same-process idle eviction resumes the persisted local SDK agent instead of force-creating.",
+		cursorCalls: 2,
+	},
 ];
 
 export const LOCAL_RESUME_SUITE_NAMES = LOCAL_RESUME_SUITES.map((suite) => suite.suite);

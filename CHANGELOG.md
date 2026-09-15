@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.7 - 2026-09-15
+
+### Fixed
+
+- After a pooled local Cursor SDK agent is idle for five minutes (`CURSOR_LOCAL_AGENT_IDLE_MS`, overridable with `PI_CURSOR_LOCAL_AGENT_IDLE_MS`), dispose the in-memory transport and `Agent.resume` the persisted handle instead of `forceCreate`. Resume failure still creates a new agent and streams the existing continuity note. `npm run smoke:local-resume:idle` proves this in one live pi RPC process.
+
 ## 0.3.6 - 2026-08-18
 
 ### Changed

@@ -301,6 +301,7 @@ describe("smoke CLI and package contracts", () => {
 			{ key: "compaction", flag: "--compaction", script: "smoke:local-resume:compaction" },
 			{ key: "defaultDryRun", flag: "--default-dry-run", script: "smoke:local-resume:default-dry-run" },
 			{ key: "cleanup", flag: "--cleanup", script: "smoke:local-resume:cleanup" },
+			{ key: "idle", flag: "--idle", script: "smoke:local-resume:idle" },
 		]);
 		const runbook = readFileSync("docs/platform-smoke.md", "utf8");
 		for (const { suite } of LOCAL_RESUME_SUITES) expect(runbook).toContain(`run ${suite}`);

@@ -129,6 +129,7 @@ start target session
   run cursor-local-resume-compaction
   run cursor-local-resume-default-dry-run
   run cursor-local-resume-cleanup
+  run cursor-local-resume-idle
   download artifacts after every suite
   stop target
   write lease-cleanup stop evidence
@@ -271,7 +272,8 @@ Package scripts:
   "smoke:local-resume:fallback": "node scripts/local-resume-smoke.mjs --fallback",
   "smoke:local-resume:compaction": "node scripts/local-resume-smoke.mjs --compaction",
   "smoke:local-resume:default-dry-run": "node scripts/local-resume-smoke.mjs --default-dry-run",
-  "smoke:local-resume:cleanup": "node scripts/local-resume-smoke.mjs --cleanup"
+  "smoke:local-resume:cleanup": "node scripts/local-resume-smoke.mjs --cleanup",
+  "smoke:local-resume:idle": "node scripts/local-resume-smoke.mjs --idle"
 }
 ```
 
@@ -545,6 +547,7 @@ The remaining local-resume platform suites run the matching focused package scri
 | `cursor-local-resume-compaction` | `npm run smoke:local-resume:compaction` | compaction boundary creates/resumes post-compaction generation |
 | `cursor-local-resume-default-dry-run` | `npm run smoke:local-resume:default-dry-run` | built-in default resumes and env opt-out wins |
 | `cursor-local-resume-cleanup` | `npm run smoke:local-resume:cleanup` | recorded-ID-only cleanup deletes old agent and preserves current agent |
+| `cursor-local-resume-idle` | `npm run smoke:local-resume:idle` | same-process idle eviction resumes the persisted local SDK agent |
 
 ### `cursor-native-visual-matrix`
 
